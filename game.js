@@ -596,7 +596,7 @@ const INITIAL_GAMESTATE = {
 let gamestate = JSON.parse(JSON.stringify(INITIAL_GAMESTATE));
 
 let hiScore = 0;
-if (window.localStorage) {
+if (window.localStorage && localStorage.getItem("hiScore")) {
     hiScore = parseInt(localStorage.getItem("hiScore"));
 }
 
