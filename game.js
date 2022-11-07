@@ -667,30 +667,43 @@ function game() {
     addEventListener("resize", stretchCanvas);
     stretchCanvas();
 
+    const KEY_RIGHTARROW = 39;
+    const KEY_LEFTARROW = 37;
+    const KEY_DOWNARROW = 40;
+    const KEY_UPARROW = 38;
+    const KEY_W = 87;
+    const KEY_A = 65;
+    const KEY_S = 83;
+    const KEY_D = 68;
+
     // key input handling
     document.addEventListener("keydown", event => {
-        if (event.keyCode === 39) {
+        const kc = event.keyCode;
+        if (kc === KEY_RIGHTARROW || kc === KEY_D) {
             gamestate.inputs.right = true;
-          } else if (event.keyCode === 37) {
+          } else if (kc === KEY_LEFTARROW || kc === KEY_A) {
             gamestate.inputs.left = true;
           }
-          if (event.keyCode === 40) {
+          if (kc === KEY_DOWNARROW || kc === KEY_S) {
             gamestate.inputs.down = true;
-          } else if (event.keyCode === 38) {
+          } else if (kc === KEY_UPARROW || kc === KEY_W) {
             gamestate.inputs.up = true;
+          } else {
+            //console.log("key", kc);
           }
     }, false);
     document.addEventListener("keyup", event => {
-        if (event.keyCode === 39) {
+        const kc = event.keyCode;
+        if (kc === KEY_RIGHTARROW || kc === KEY_D) {
             gamestate.inputs.right = false;
-          } else if (event.keyCode === 37) {
+        } else if (kc === KEY_LEFTARROW || kc === KEY_A) {
             gamestate.inputs.left = false;
-          }
-          if (event.keyCode === 40) {
+        }
+        if (kc === KEY_DOWNARROW || kc === KEY_S) {
             gamestate.inputs.down = false;
-          } else if (event.keyCode === 38) {
+        } else if (kc === KEY_UPARROW || kc === KEY_W) {
             gamestate.inputs.up = false;
-          }
+        }
     }, false);
 
     // attempt to get sound working on any click
