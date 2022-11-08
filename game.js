@@ -129,10 +129,13 @@ class Sprite {
     }
 
     /**
-     * Stops all sounds being managed by this sprite.
+     * Disconnects and nulls out this.sound if there is one.
      */
     silence() {
-        // no-op. should be implemented by subclass.
+        if (this.sound) {
+            this.sound.disconnect();
+            this.sound = null;
+        }
     }
 
     finished() {
@@ -228,6 +231,7 @@ class GameOverMessage extends Sprite {
         })
         this.x = PLAYFIELD_WIDTH / 2 - 304 / 2;
         this.y = PLAYFIELD_HEIGHT / 2 - this.frameheight / 2;
+        this.sound = playSample("teapotdeath");
     }
 }
 
@@ -277,7 +281,7 @@ class Player extends Sprite {
         if (gamestate.inputs.fire) {
             if (gamestate.knifeThrowCooldown === 0) {
                 gamestate.knifeThrowCooldown = KNIFE_COOLDOWN_FRAMES;
-                if (this.spendKnife()) {
+                if (this.spendKnife(true)) {
                     let knife = new Knife(Knife.STATE_THROWN);
                     gamestate.sprites.push(knife);
                     knife.x = this.x + this.hitbox.w;
@@ -299,14 +303,14 @@ class Player extends Sprite {
             case "Lamb":
                 if (this.intersects(other)) {
                     if (other.dead) break;
-                    if (!this.spendKnife()) break;
+                    if (!this.spendKnife(false)) break;
 
                     other.die();
                     gamestate.score += 1000;
                     playSample("lambkill");
                     // TODO floating number
-                    break;
                 }
+                break;
             case "Knife":
                 if (this.intersects(other)) {
                     gamestate.knives++;
@@ -318,8 +322,8 @@ class Player extends Sprite {
                     playSample("schwing");
                     // TODO floating number
 
-                    break;
                 }
+                break;
         }
     }
 
@@ -327,9 +331,11 @@ class Player extends Sprite {
      * Attempts to spend a knife from inventory.
      * @returns true if a knife was spent
      */
-    spendKnife() {
+    spendKnife(soundOnFail) {
         if (gamestate.knives === 0) {
-            playSample("outtaknives");
+            if (soundOnFail) {
+                this.sound = playSample("outtaknives");
+            }
             return false;
         }
         gamestate.knives--;
@@ -341,7 +347,6 @@ class Player extends Sprite {
 
     die() {
         this.setAnimation("dead");
-        playSample("teapotdeath");
         setGamePhase(PHASE_GAME_OVER);
     }
 }
@@ -498,13 +503,6 @@ class Knife extends Sprite {
             this.silence();
         }
         return f;
-    }
-
-    silence() {
-        if (this.sound) {
-            this.sound.disconnect();
-            this.sound = null;
-        }
     }
 }
 
@@ -700,6 +698,7 @@ if (window.localStorage && localStorage.getItem("hiScore")) {
 function setGamePhase(newPhase) {
     switch (newPhase) {
         case PHASE_ATTRACT:
+            silenceAllSprites();
             setMusic("attractmusic");
             gamestate.phase = newPhase;
             gamestate.sprites = [];
@@ -716,10 +715,8 @@ function setGamePhase(newPhase) {
             gamestate.sprites.push(gamestate.player);
             break;
         case PHASE_GAME_OVER:
+            silenceAllSprites();
             setMusic(null); // will transition to gameover music after SFX ends
-            for (var s of gamestate.sprites) {
-                s.silence();
-            }
             gamestate.phase = newPhase;
             gamestate.sprites.push(new GameOverMessage());
             gamestate.frameDelay = 100;
@@ -733,6 +730,15 @@ function setGamePhase(newPhase) {
             }
 
             break;
+    }
+}
+
+function silenceAllSprites() {
+    for (var s of gamestate.sprites) {
+        s.silence();
+    }
+    for (var s of gamestate.bgsprites) {
+        s.silence();
     }
 }
 
