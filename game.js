@@ -128,6 +128,13 @@ class Sprite {
         // no-op. should be implemented by subclass.
     }
 
+    /**
+     * Stops all sounds being managed by this sprite.
+     */
+    silence() {
+        // no-op. should be implemented by subclass.
+    }
+
     finished() {
         return !this.isOnScreen();
     }
@@ -267,6 +274,17 @@ class Player extends Sprite {
         if (gamestate.inputs.down) {
             this.y += this.speed;
         }
+        if (gamestate.inputs.fire) {
+            if (gamestate.knifeThrowCooldown === 0) {
+                gamestate.knifeThrowCooldown = KNIFE_COOLDOWN_FRAMES;
+                if (this.spendKnife()) {
+                    let knife = new Knife(Knife.STATE_THROWN);
+                    gamestate.sprites.push(knife);
+                    knife.x = this.x + this.hitbox.w;
+                    knife.y = this.y;
+                }
+            }
+        }
         this.ensureFullyOnScreen();
     }
 
@@ -281,14 +299,7 @@ class Player extends Sprite {
             case "Lamb":
                 if (this.intersects(other)) {
                     if (other.dead) break;
-                    if (gamestate.knives === 0) {
-                        // TODO fail sound
-                        break;
-                    }
-                    gamestate.knives--;
-                    if (gamestate.knives === 0) {
-                        this.setAnimation("walking");
-                    }
+                    if (!this.spendKnife()) break;
 
                     other.die();
                     gamestate.score += 1000;
@@ -310,6 +321,22 @@ class Player extends Sprite {
                     break;
                 }
         }
+    }
+
+    /**
+     * Attempts to spend a knife from inventory.
+     * @returns true if a knife was spent
+     */
+    spendKnife() {
+        if (gamestate.knives === 0) {
+            playSample("outtaknives");
+            return false;
+        }
+        gamestate.knives--;
+        if (gamestate.knives === 0) {
+            this.setAnimation("walking");
+        }
+        return true;
     }
 
     die() {
@@ -393,10 +420,13 @@ class Onion extends Sprite {
 }
 
 class Knife extends Sprite {
-    constructor() {
+    static STATE_GROUNDED = "STATE_GROUNDED";
+    static STATE_THROWN = "STATE_THROWN";
+
+    constructor(initialState) {
         super("Knife", "Knife.png", 32, {
-            idle: [[0,50]],
-            throwing: [[0,2], [1,2], [2,2], [3,2]]
+            grounded: [[0,50]],
+            thrown: [[0,2], [1,2], [2,2], [3,2]]
         });
         this.x = PLAYFIELD_WIDTH;
         this.y = Math.random() * PLAYFIELD_HEIGHT - this.frameheight;
@@ -406,15 +436,74 @@ class Knife extends Sprite {
             w: 9,
             h: 9,
         }
-        this.throwing = false;
-        this.throwSpeed = 6;
+        this.setState(initialState);
+        this.velocity = [6, 0];
+    }
+
+    setState(newState) {
+        switch (newState) {
+            case Knife.STATE_GROUNDED:
+                this.setAnimation("grounded");
+                this.silence();
+                break;
+            case Knife.STATE_THROWN:
+                this.setAnimation("thrown");
+                this.silence();
+                this.sound = playSample("throw");
+                break;
+        }
+        this.state = newState;
     }
 
     move() {
-        if (!this.throwing) {
-            this.x -= gamestate.roadSpeed;
-        } else {
-            this.x += this.throwSpeed;
+        switch (this.state) {
+            case Knife.STATE_GROUNDED:
+                this.x -= gamestate.roadSpeed;
+                break;
+            case Knife.STATE_THROWN:
+                this.x += this.velocity[0];
+                this.y += this.velocity[1];
+                break;
+        }
+    }
+
+    interact(other) {
+        if (this.state !== Knife.STATE_THROWN) {
+            return;
+        }
+        switch (other.name) {
+            case "Broccoli":
+            case "Onion":
+                if (this.intersects(other)) {
+                    this.setState(Knife.STATE_GROUNDED);
+                }
+                break;
+            case "Lamb":
+                if (this.intersects(other)) {
+                    if (other.dead) break;
+                    other.die(); // TODO sound and score in lamb.die()?
+                    gamestate.score += 1000;
+                    playSample("lambkill");
+                    // TODO floating number
+                    this.velocity[0] *= -1;
+                    this.velocity[1] = Math.random() * 4 - 2
+                    break;
+                }
+        }
+    }
+
+    finished() {
+        let f = super.finished();
+        if (f) {
+            this.silence();
+        }
+        return f;
+    }
+
+    silence() {
+        if (this.sound) {
+            this.sound.disconnect();
+            this.sound = null;
         }
     }
 }
@@ -458,9 +547,13 @@ let sounds = {
         file: "Schwing.mp3"
     },
     throw: {
-        file: "KnifeThrow.mp3"
+        file: "KnifeThrow.mp3",
+        loop: true,
     },
-    bew: {
+    outtaknives: {
+        file: "Ennh.mp3"
+    },
+    onionthrow: {
         file: "Bew.mp3"
     },
     lambkill: {
@@ -548,6 +641,8 @@ const PHASE_ATTRACT = "PHASE_ATTRACT";
 const PHASE_RUNNING = "PHASE_RUNNING";
 const PHASE_GAME_OVER = "GAME_OVER"
 
+const KNIFE_COOLDOWN_FRAMES = 20;
+
 const INITIAL_GAMESTATE = {
     phase: PHASE_ATTRACT,
     frameDelay: 10,
@@ -567,6 +662,8 @@ const INITIAL_GAMESTATE = {
     knives: 3,
     score: 0,
     
+    knifeThrowCooldown: 0, // see also KNIFE_COOLDOWN_FRAMES
+
     lamb: null,
     lambSpeed: 1.5,
 
@@ -620,6 +717,9 @@ function setGamePhase(newPhase) {
             break;
         case PHASE_GAME_OVER:
             setMusic(null); // will transition to gameover music after SFX ends
+            for (var s of gamestate.sprites) {
+                s.silence();
+            }
             gamestate.phase = newPhase;
             gamestate.sprites.push(new GameOverMessage());
             gamestate.frameDelay = 100;
@@ -649,7 +749,6 @@ function game() {
         // determine scale (size of logical pixel in physical pixels)
         // let scale = Math.min(PLAYFIELD_HEIGHT / ch, PLAYFIELD_WIDTH / cw);
         let scale = Math.min(canvas.width / PLAYFIELD_WIDTH, canvas.height / PLAYFIELD_HEIGHT);
-        // TODO centre it (x + y offset)
 
         /** @type {CanvasRenderingContext2D} */
         let ctx = canvas.getContext("2d");
@@ -708,6 +807,8 @@ function game() {
             gamestate.inputs.down = true;
           } else if (kc === KEY_UPARROW || kc === KEY_W) {
             gamestate.inputs.up = true;
+          } else if (kc === KEY_SPACE) {
+            gamestate.inputs.fire = true;
           } else {
             console.log("key", kc);
           }
@@ -722,6 +823,8 @@ function game() {
             gamestate.inputs.down = false;
         } else if (kc === KEY_UPARROW || kc === KEY_W) {
             gamestate.inputs.up = false;
+        } else if (kc === KEY_SPACE) {
+            gamestate.inputs.fire = false;
         }
     }, false);
 
@@ -751,7 +854,7 @@ function gameloop() {
     }
 
     if (gamestate.phase === PHASE_ATTRACT) {
-        // TODO get people to play!
+        // start key/click is in input handler from one-time init function
 
     } else if (gamestate.phase === PHASE_GAME_OVER) {
         if (gamestate.gameOverMusicDelay-- === 0) {
@@ -788,16 +891,17 @@ function gameloop() {
                 gamestate.nextOnion-- == 0) {
             gamestate.sprites.push(new Onion());
             gamestate.nextOnion = gamestate.onionFrequency;
-            playSample("bew");
+            playSample("onionthrow");
         }
 
         // new knife?
         if (gamestate.nextKnife-- == 0) {
             gamestate.nextKnife = gamestate.knifeFrequency;
-            gamestate.sprites.push(new Knife());
+            gamestate.sprites.push(new Knife(Knife.STATE_GROUNDED));
         }
 
-        // TODO new teabags?
+        gamestate.knifeThrowCooldown =
+            Math.max(gamestate.knifeThrowCooldown - 1, 0);
 
         move(gamestate.bgsprites);
         move(gamestate.sprites);
