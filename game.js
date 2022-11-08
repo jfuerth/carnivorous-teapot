@@ -36,6 +36,7 @@ const ROAD_LINE_YS = [
     (PLAYFIELD_HEIGHT / 4) * 2,
     (PLAYFIELD_HEIGHT / 4) * 3,
 ]
+const HISCORE_STORAGE_KEY = "hiScore_2"
 
 class Sprite {
     /**
@@ -691,8 +692,8 @@ const INITIAL_GAMESTATE = {
 let gamestate = JSON.parse(JSON.stringify(INITIAL_GAMESTATE));
 
 let hiScore = 0;
-if (window.localStorage && localStorage.getItem("hiScore")) {
-    hiScore = parseInt(localStorage.getItem("hiScore"));
+if (window.localStorage && localStorage.getItem(HISCORE_STORAGE_KEY)) {
+    hiScore = parseInt(localStorage.getItem(HISCORE_STORAGE_KEY));
 }
 
 function setGamePhase(newPhase) {
@@ -725,7 +726,7 @@ function setGamePhase(newPhase) {
                 hiScore = gamestate.score;
                 gamestate.sprites.push(new NewHiScore());
                 if (localStorage) {
-                    localStorage.setItem("hiScore", "" + gamestate.score);
+                    localStorage.setItem(HISCORE_STORAGE_KEY, "" + gamestate.score);
                 }
             }
 
