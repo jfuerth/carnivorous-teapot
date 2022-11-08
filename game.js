@@ -667,6 +667,24 @@ function game() {
     addEventListener("resize", stretchCanvas);
     stretchCanvas();
 
+    // function that progresses through attract and game over phases
+    // plus attempts to start sound. Safe to call on any user input, really.
+    const startGameAndSound = () => {
+        // check if context is in suspended state (autoplay policy)
+        if (audioCtx.state === 'suspended') {
+            audioCtx.resume();
+        }
+        if (!!gamestate) {
+            if (gamestate.phase === PHASE_ATTRACT) {
+                setGamePhase(PHASE_RUNNING);
+            } else if (gamestate.phase === PHASE_GAME_OVER) {
+                setGamePhase(PHASE_ATTRACT);
+            }
+        }
+    }
+
+    const KEY_SPACE = 32;
+    const KEY_ENTER = 13;
     const KEY_RIGHTARROW = 39;
     const KEY_LEFTARROW = 37;
     const KEY_DOWNARROW = 40;
@@ -679,17 +697,19 @@ function game() {
     // key input handling
     document.addEventListener("keydown", event => {
         const kc = event.keyCode;
+        if (kc === KEY_SPACE || kc == KEY_ENTER) {
+            startGameAndSound();
+        }
         if (kc === KEY_RIGHTARROW || kc === KEY_D) {
             gamestate.inputs.right = true;
           } else if (kc === KEY_LEFTARROW || kc === KEY_A) {
             gamestate.inputs.left = true;
-          }
-          if (kc === KEY_DOWNARROW || kc === KEY_S) {
+          } else if (kc === KEY_DOWNARROW || kc === KEY_S) {
             gamestate.inputs.down = true;
           } else if (kc === KEY_UPARROW || kc === KEY_W) {
             gamestate.inputs.up = true;
           } else {
-            //console.log("key", kc);
+            console.log("key", kc);
           }
     }, false);
     document.addEventListener("keyup", event => {
@@ -698,8 +718,7 @@ function game() {
             gamestate.inputs.right = false;
         } else if (kc === KEY_LEFTARROW || kc === KEY_A) {
             gamestate.inputs.left = false;
-        }
-        if (kc === KEY_DOWNARROW || kc === KEY_S) {
+        } else if (kc === KEY_DOWNARROW || kc === KEY_S) {
             gamestate.inputs.down = false;
         } else if (kc === KEY_UPARROW || kc === KEY_W) {
             gamestate.inputs.up = false;
@@ -707,19 +726,7 @@ function game() {
     }, false);
 
     // attempt to get sound working on any click
-    document.getElementById("game").addEventListener('click', () => {
-        // check if context is in suspended state (autoplay policy)
-        if (audioCtx.state === 'suspended') {
-            audioCtx.resume();
-        }
-        if (!!gamestate) {
-            if (gamestate.phase === PHASE_ATTRACT) {
-                setGamePhase(PHASE_RUNNING);
-            } else if (gamestate.phase === PHASE_GAME_OVER) {
-                setGamePhase(PHASE_ATTRACT);
-            }
-        }
-    }, false);
+    document.getElementById("game").addEventListener('click', startGameAndSound, false);
 
     // initialize sound (blocks game startup)
     setupSamples().then(() => {
