@@ -308,21 +308,23 @@ class Player extends Sprite {
 
                     other.die();
                     gamestate.score += 1000;
-                    playSample("lambkill");
                     // TODO floating number
                 }
                 break;
             case "Knife":
                 if (this.intersects(other)) {
-                    gamestate.knives++;
-                    if (gamestate.knives === 1) {
-                        this.setAnimation("wielding");
+                    if (other.state === Knife.STATE_GROUNDED) {
+                        gamestate.knives++;
+                        if (gamestate.knives === 1) {
+                            this.setAnimation("wielding");
+                        }
+                        gamestate.score += 100;
+                        other.x = -100; // will remove on next frame
+                        playSample("schwing");
+                        // TODO floating number
+                    } else {
+                        this.die();
                     }
-                    gamestate.score += 100;
-                    other.x = -100; // will remove on next frame
-                    playSample("schwing");
-                    // TODO floating number
-
                 }
                 break;
         }
@@ -376,6 +378,7 @@ class Lamb extends Sprite {
     die() {
         this.setAnimation("dead");
         this.dead = true;
+        this.sound = playSample("lambkill");
     }
 }
 
@@ -487,9 +490,8 @@ class Knife extends Sprite {
             case "Lamb":
                 if (this.intersects(other)) {
                     if (other.dead) break;
-                    other.die(); // TODO sound and score in lamb.die()?
+                    other.die(); // TODO: score in lamb.die()?
                     gamestate.score += 1000;
-                    playSample("lambkill");
                     // TODO floating number
                     this.velocity[0] *= -1;
                     this.velocity[1] = Math.random() * 4 - 2
@@ -661,7 +663,7 @@ const INITIAL_GAMESTATE = {
     knives: 3,
     score: 0,
     
-    knifeThrowCooldown: 0, // see also KNIFE_COOLDOWN_FRAMES
+    knifeThrowCooldown: KNIFE_COOLDOWN_FRAMES, // don't start at 0 because it can waste a knife on start
 
     lamb: null,
     lambSpeed: 1.5,
