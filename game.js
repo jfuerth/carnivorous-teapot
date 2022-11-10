@@ -38,13 +38,118 @@ const ROAD_LINE_YS = [
 ]
 const HISCORE_STORAGE_KEY = "hiScore_2"
 
-class Sprite {
+/**
+ * A possibly animated (multi-frame) image. All frames have the same
+ * width and height.
+ */
+class Drawable {
+
+    /** @type {ImageBitmap[]} */
+    frames = [];
+
+    /** @type {boolean} */
+    ready = false;
+
     /**
-     * A positionable, animated image.
+     * The image width this drawable's nextFrame() method returns.
+     * @type {number} */
+    w;
+
+    /**
+     * The image height this drawable's nextFrame() method returns.
+     * @type {number} */
+    h;
+
+    /**
+     * Returns the image that should be drawn for this animation frame.
+     * Called exactly once per frame while this Drawable is on screen.
+     */
+    nextFrame() {
+        // implemented by subclasses
+    }
+
+    /**
+     * Asynchronously initializes the give drawable by downloading the
+     * given image and slicing it into equally sized frames, left-to-right
+     * and top-to-bottom.
+     * 
+     * Initializes the following properties:
+     * * frames --> the frames sliced from the image
+     * * ready --> true
+     * * w --> width of one frame
+     * * h --> height of one frame
+     * 
+     * @param {Drawable} drawable the Drawable to initialize
+     * @param {string} imgsrc filename of the image to cut the frames from.
+     * @param {number} fw width of one frame. -1 means full source image width.
+     * @param {number} fh height of one frame. -1 means full image height.
+     * @param {Function<Drawable> | undefined} onReady function that runs when all properties are set and drawable is ready
+     */
+    static initFrames(drawable, imgsrc, fw, fh, onReady) {
+        let image = new Image();
+        image.src = imgsrc;
+        image.onload = () => {
+            if (fw === -1) {
+                fw = image.width;
+            }
+            if (fh === -1) {
+                fh = image.height;
+            }
+            drawable.w = fw;
+            drawable.h = fh;
+            
+            let frame_promises = [];
+            for (var y = 0; y < image.height; y += fh) {
+                for (var x = 0; x < image.width; x += fw) {
+                    frame_promises.push(
+                        createImageBitmap(image, x, y, fw, fh));
+                }
+            }
+
+            Promise.all(frame_promises).then((frames) => {
+                //console.log("Saving sprites as frames");
+                drawable.frames = frames;
+                drawable.ready = true;
+                if (onReady !== undefined) {
+                    onReady(drawable);
+                }
+            });
+        }
+    }
+}
+
+/**
+ * A positionable, animated image that can make sound, have movement behaviour,
+ * and interact with other Sprites.
+ */
+class Sprite extends Drawable {
+
+    name;
+    
+    x;
+    y;
+    hitbox;
+    
+    animations;
+    animation;
+    animFrame;
+    animFrameStep;
+    
+    sound;
+
+    /**
+     * Creates a new Sprite with the given properties.
+     * 
+     * Note that the hitbox is initialized asynchronously to the full size
+     * of the sprite's frame. If the hitbox has already been set before the frames are
+     * populated and this sprite becomes ready, it will not be overwritten by the default
+     * full-size hitbox.
      * 
      * @param {*} name The name of this sprite (for debugging)
      * @param {*} imgsrc The location to load the image from. Image should be a column of frames (1xN).
-     * @param {*} frameheight The pixel height of 1 frame in the source image. All frames have the same height and the same width (the source image width).
+     * @param {*} frameheight The pixel height of 1 frame within the source image. -1 means full height
+     *  of source image (so this sprite will have only one frame) All frames have the same height and
+     *  the same width (the source image width).
      * @param {*} animations Animation specs referring to frames:
      * ```
      * {
@@ -54,10 +159,8 @@ class Sprite {
      * ```
      */
     constructor(name, imgsrc, frameheight, animations) {
+        super();
         this.name = name;
-        this.image = new Image();
-        this.image.src = imgsrc;
-        this.frameheight = frameheight;
         this.animations = animations;
         this.x = 0;
         this.y = 0;
@@ -65,36 +168,28 @@ class Sprite {
         // inits this.animation, this.animFrame, this.animFrameStep
         this.setAnimation(Object.keys(animations)[0]);
 
-        // we become ready when the spritesheet has been processed into this.frames
-        this.ready = false;
-
         // cutting from spritesheet https://developer.mozilla.org/en-US/docs/Web/API/createImageBitmap
-        let thissprite = this;
-        this.image.onload = () => {
-            let frame_promises = [];
-            for (var y = 0; y < thissprite.image.height; y+= frameheight) {
-                frame_promises.push(createImageBitmap(
-                    thissprite.image,
-                    0, y,
-                    thissprite.image.width, frameheight))
-            }
-
-            Promise.all(frame_promises).then((frames) => {
-                //console.log("Saving sprites as frames");
-                thissprite.frames = frames;
-                thissprite.ready = true;
-            });
-
+        Drawable.initFrames(this, imgsrc, -1, frameheight, (self) => {
             // init hitbox unless it was already set before image loaded
-            if (!thissprite.hitbox) {
-                thissprite.hitbox = {
-                     x: 0,
-                     y: 0,
-                     w: thissprite.image.width,
-                     h: frameheight
+            if (!self.hitbox) {
+                self.hitbox = {
+                        x: 0,
+                        y: 0,
+                        w: self.w,
+                        h: self.h
                 };
             }
-        }
+            self.whenReady();
+        })
+    }
+
+    /**
+     * Invoked when this.frames, this.w, and this.h have been initialized.
+     */
+    whenReady() {
+        // no op. can be overriden by subclasses.
+        // TODO could eliminate the need for this by pre-loading all images at startup
+        // like we do with the sounds.
     }
 
     setAnimation(name) {
@@ -144,10 +239,10 @@ class Sprite {
     }
 
     isOnScreen() {
-        if (this.x > PLAYFIELD_WIDTH || this.x < -this.image.width) {
+        if (this.x > PLAYFIELD_WIDTH || this.x < -this.w) {
             return false;
         }
-        if (this.y > PLAYFIELD_HEIGHT || this.y < -this.frameheight) {
+        if (this.y > PLAYFIELD_HEIGHT || this.y < -this.h) {
             return false;
         }
         return true;
@@ -160,14 +255,14 @@ class Sprite {
         if (this.x < 0) {
             this.x = 0;
         }
-        if (this.x > PLAYFIELD_WIDTH - this.image.width) {
-            this.x = PLAYFIELD_WIDTH - this.image.width;
+        if (this.x > PLAYFIELD_WIDTH - this.w) {
+            this.x = PLAYFIELD_WIDTH - this.w;
         }
         if (this.y < 0) {
             this.y = 0;
         }
-        if (this.y > PLAYFIELD_HEIGHT - this.frameheight) {
-            this.y = PLAYFIELD_HEIGHT - this.frameheight;
+        if (this.y > PLAYFIELD_HEIGHT - this.h) {
+            this.y = PLAYFIELD_HEIGHT - this.h;
         }
     }
 
@@ -192,13 +287,20 @@ class Sprite {
     }
 }
 
+class Text extends Drawable {
+//constructor should cut sprites from sheet. not sure if we can/should share with other sprite constructor
+}
+
 class TitleScreen extends Sprite {
     constructor() {
-        super("TitleScreen", "TitleScreen.png", 320, {
+        super("TitleScreen", "TitleScreen.png", -1, {
             idle: [[0,500]],
         })
+    }
+    
+    whenReady() {
         this.x = PLAYFIELD_WIDTH / 2 - 380 / 2;
-        this.y = PLAYFIELD_HEIGHT / 2 - this.frameheight / 2;
+        this.y = PLAYFIELD_HEIGHT / 2 - this.h / 2;
     }
 }
 
@@ -210,8 +312,11 @@ class ClickToStart extends Sprite {
                 [0,6],[1,6],[2,6],
                 [3,4],[4,4],[3,4],[4,4],],
         })
+    }
+    
+    whenReady() {
         this.x = PLAYFIELD_WIDTH / 2 - 256 / 2;
-        this.y = PLAYFIELD_HEIGHT / 2 - this.frameheight / 2;
+        this.y = PLAYFIELD_HEIGHT / 2 - this.h / 2;
     }
 }
 
@@ -220,6 +325,9 @@ class Credits extends Sprite {
         super("Credits", "Credits.png", 16, {
             credits: [[0,20],[1,20],[2,20],[3,20],[4,20],],
         })
+    }
+    
+    whenReady() {
         this.x = PLAYFIELD_WIDTH / 2 - 400 / 2;
         this.y = PLAYFIELD_HEIGHT / 2 + 380/2; // below title
     }
@@ -227,12 +335,15 @@ class Credits extends Sprite {
 
 class GameOverMessage extends Sprite {
     constructor() {
-        super("GameOver", "GameOver.png", 48, {
+        super("GameOver", "GameOver.png", -1, {
             idle: [[0,500]],
         })
-        this.x = PLAYFIELD_WIDTH / 2 - 304 / 2;
-        this.y = PLAYFIELD_HEIGHT / 2 - this.frameheight / 2;
         this.sound = playSample("teapotdeath");
+    }
+    
+    whenReady() {
+        this.x = PLAYFIELD_WIDTH / 2 - 304 / 2;
+        this.y = PLAYFIELD_HEIGHT / 2 - this.h / 2;
     }
 }
 
@@ -241,8 +352,11 @@ class NewHiScore extends Sprite {
         super("NewHiScore", "NewHiScore.png", 16, {
             flashing: [[0,5],[1,5]],
         })
+    }
+    
+    whenReady() {
         this.x = PLAYFIELD_WIDTH / 2 - 240 / 2;
-        this.y = PLAYFIELD_HEIGHT / 2 - this.frameheight / 2 + 60;
+        this.y = PLAYFIELD_HEIGHT / 2 - this.h / 2 + 60;
     }
 }
 
@@ -362,9 +476,12 @@ class Lamb extends Sprite {
             dead: [[4,500]]
         });
         this.setAnimation("running");
-        this.x = PLAYFIELD_WIDTH;
-        this.y = Math.random() * (PLAYFIELD_HEIGHT - this.frameheight);
         this.dead = false;
+    }
+    
+    whenReady() {
+        this.x = PLAYFIELD_WIDTH;
+        this.y = Math.random() * (PLAYFIELD_HEIGHT - this.h);
     }
 
     move() {
@@ -387,14 +504,17 @@ class Broccoli extends Sprite {
         super("Broccoli", "Broccoli.png", 32, {
             idle: [[0,50]]
         });
-        this.x = PLAYFIELD_WIDTH;
-        this.y = Math.random() * (PLAYFIELD_HEIGHT - this.frameheight);
         this.hitbox = {
             x: 10,
             y: 6,
             w: 12,
             h: 16,
         }
+    }
+
+    whenReady() {
+        this.x = PLAYFIELD_WIDTH;
+        this.y = Math.random() * (PLAYFIELD_HEIGHT - this.h);
     }
 
     move() {
@@ -407,19 +527,22 @@ class Onion extends Sprite {
         super("Onion", "Onion.png", 32, {
             rolling: [[0,5],[1,5],[2,5],[3,5],]
         });
-        this.x = gamestate.player.x;
-        if (gamestate.player.y < PLAYFIELD_HEIGHT / 2) {
-            this.y = PLAYFIELD_HEIGHT;
-            this.speed = -gamestate.onionSpeed;
-        } else {
-            this.y = -(this.frameheight - 1);
-            this.speed = gamestate.onionSpeed;
-        }
         this.hitbox = {
             x: 6,
             y: 6,
             w: 20,
             h: 21,
+        }
+    }
+
+    whenReady() {
+        this.x = gamestate.player.x;
+        if (gamestate.player.y < PLAYFIELD_HEIGHT / 2) {
+            this.y = PLAYFIELD_HEIGHT;
+            this.speed = -gamestate.onionSpeed;
+        } else {
+            this.y = -(this.h - 1);
+            this.speed = gamestate.onionSpeed;
         }
     }
 
@@ -433,12 +556,13 @@ class Knife extends Sprite {
     static STATE_THROWN = "STATE_THROWN";
 
     constructor(initialState) {
-        super("Knife", "Knife.png", 32, {
+        const height = 32;
+        super("Knife", "Knife.png", height, {
             grounded: [[0,50]],
             thrown: [[0,2], [1,2], [2,2], [3,2]]
         });
         this.x = PLAYFIELD_WIDTH;
-        this.y = Math.random() * PLAYFIELD_HEIGHT - this.frameheight;
+        this.y = Math.random() * PLAYFIELD_HEIGHT - height;
         this.hitbox = {
             x: 6,
             y: 5,
@@ -448,7 +572,7 @@ class Knife extends Sprite {
         this.setState(initialState);
         this.velocity = [6, 0];
     }
-
+    
     setState(newState) {
         switch (newState) {
             case Knife.STATE_GROUNDED:
@@ -517,7 +641,7 @@ class RoadLine extends Sprite {
         this.x = PLAYFIELD_WIDTH;
         this.y = y;
     }
-
+    
     move() {
         this.x -= gamestate.roadSpeed;
     }
@@ -528,6 +652,9 @@ class Sidewalk extends Sprite {
         super("Sidewalk", "Sidewalk.png", 32, {
             idle: [[0,500]]
         });
+    }
+    
+    whenReady() {
         this.x = PLAYFIELD_WIDTH;
         this.y = 0;
     }
@@ -650,6 +777,7 @@ const INITIAL_GAMESTATE = {
 
     bgsprites: [],
     sprites: [],
+    fgsprites: [],
 
     inputs: {
         left: false,
@@ -705,6 +833,7 @@ function setGamePhase(newPhase) {
             setMusic("attractmusic");
             gamestate.phase = newPhase;
             gamestate.sprites = [];
+            gamestate.fgsprites = [];
             gamestate.sprites.push(new TitleScreen());
             gamestate.sprites.push(new ClickToStart());
             gamestate.sprites.push(new Credits());
@@ -721,12 +850,12 @@ function setGamePhase(newPhase) {
             silenceAllSprites();
             setMusic(null); // will transition to gameover music after SFX ends
             gamestate.phase = newPhase;
-            gamestate.sprites.push(new GameOverMessage());
+            gamestate.fgsprites.push(new GameOverMessage());
             gamestate.frameDelay = 100;
 
             if (gamestate.score > hiScore) {
                 hiScore = gamestate.score;
-                gamestate.sprites.push(new NewHiScore());
+                gamestate.fgsprites.push(new NewHiScore());
                 if (localStorage) {
                     localStorage.setItem(HISCORE_STORAGE_KEY, "" + gamestate.score);
                 }
@@ -741,6 +870,9 @@ function silenceAllSprites() {
         s.silence();
     }
     for (var s of gamestate.bgsprites) {
+        s.silence();
+    }
+    for (var s of gamestate.fgsprites) {
         s.silence();
     }
 }
@@ -914,14 +1046,15 @@ function gameloop() {
 
         move(gamestate.bgsprites);
         move(gamestate.sprites);
+        move(gamestate.fgsprites);
 
         interact(gamestate.sprites);
     }
 
-    // update scoreboard
     let ctx = prepareRender();
     render(ctx, gamestate.bgsprites);
     render(ctx, gamestate.sprites);
+    render(ctx, gamestate.fgsprites);
     renderStatusBar(ctx, gamestate);
     
     setTimeout(gameloop, gamestate.frameDelay);
@@ -994,14 +1127,14 @@ function renderStatusBar(
         if (gamestate.phase === PHASE_ATTRACT) {
             score = ":; " + hiScore; // ":;" maps to "HI" in our sprite
         }
-        let x = PLAYFIELD_WIDTH - (numberSprite.image.width * (1 + score.length))
+        let x = PLAYFIELD_WIDTH - (numberSprite.w * (1 + score.length))
         for (var i = 0; i < score.length; i++) {
             let digit = score.charCodeAt(i) - 48; // 48 is ascii '0'
             let image = numberSprite.frames[digit];
             if (image) {
                 ctx.drawImage(image, x, y);
             }
-            x += numberSprite.image.width;
+            x += numberSprite.w;
         }
     }
 
