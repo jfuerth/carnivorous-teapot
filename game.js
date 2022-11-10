@@ -36,7 +36,7 @@ const ROAD_LINE_YS = [
     (PLAYFIELD_HEIGHT / 4) * 2,
     (PLAYFIELD_HEIGHT / 4) * 3,
 ]
-const HISCORE_STORAGE_KEY = "hiScore_2"
+const HISCORE_STORAGE_KEY = "hiScore_3"
 
 /**
  * A possibly animated (multi-frame) image. All frames have the same
